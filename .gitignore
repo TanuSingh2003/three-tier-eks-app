@@ -1,0 +1,56 @@
+# === Terraform ===
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.plan
+crash.log
+terraform.tfvars.json
+override.tf
+override.tf.json
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+.env/
+venv/
+env/
+*.sqlite3
+*.log
+
+# === Flask ===
+instance/
+
+# === Docker ===
+*.tar
+*.img
+
+# === Kubernetes ===
+.kube/
+*.yaml~
+
+# === GitHub Actions ===
+.github/workflows/*.log
+
+# === Node.js (optional frontend) ===
+node_modules/
+npm-debug.log*
+yarn-error.log
+dist/
+build/
+
+# === VS Code ===
+.vscode/
+*.code-workspace
+
+# === OS Specific ===
+.DS_Store
+Thumbs.db
+
+# === General ===
+*.bak
+*.swp
+

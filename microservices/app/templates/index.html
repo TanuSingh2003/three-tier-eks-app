@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flask To-Do</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📝 To-Do List</h1>
+    <form method="POST" action="/add">
+      <input name="task" required placeholder="Enter task">
+      <button type="submit">Add</button>
+    </form>
+    <ul>
+      {% for t in tasks %}
+        <li>{{ t.task }} <a href="/delete/{{ t._id }}">❌</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+</body>
+</html>
+
