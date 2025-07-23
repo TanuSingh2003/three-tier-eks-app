@@ -1,4 +1,4 @@
-name: Full Secure CI/CD Pipeline - Flask App
+name: Secure Build & Deploy Flask App to ECR
 
 on:
   push:
@@ -6,7 +6,9 @@ on:
 
 jobs:
   secure-deploy:
+    name: CI/CD with Security Scanning
     runs-on: ubuntu-latest
+
     env:
       AWS_REGION: ap-south-1
       ECR_REPOSITORY: flask-todo-app
@@ -17,7 +19,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 📜 AWS Auth
+    # ✅ Configure AWS
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -25,19 +27,19 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # 🔍 Gitleaks - Secrets Scan
-    - name: Gitleaks Secret Scan
+    # 🔍 Gitleaks - Secret Scan
+    - name: Gitleaks Scan
       uses: gitleaks/gitleaks-action@v2
       continue-on-error: true
 
-    # 🧪 Bandit - Python SAST
-    - name: Python Code Scan - Bandit
+    # 🧪 Bandit - Python Security
+    - name: Bandit Scan
       run: |
         pip install bandit
         bandit -r $APP_DIR || true
 
-    # ☁️ Checkov - IaC Scan
-    - name: Checkov Scan - Terraform and K8s
+    # 🛡️ Checkov - IaC Scan
+    - name: Checkov Scan
       uses: bridgecrewio/checkov-action@master
       with:
         directory: .
@@ -45,48 +47,50 @@ jobs:
         quiet: true
         soft_fail: true
 
-    # 📄 KubeLinter - Kubernetes YAML Security Lint
-    - name: Run KubeLinter on K8s YAMLs
+    # 📄 KubeLinter - K8s YAML Linting
+    - name: Run KubeLinter
       run: |
         curl -sL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz | tar xz
         sudo mv kube-linter /usr/local/bin/
         kube-linter lint k8s/ || true
 
-    # 🐳 Docker Build
+    # 🐳 Build Docker Image
     - name: Build Docker Image
-      run: docker build -t $ECR_REPOSITORY:$IMAGE_TAG $APP_DIR
+      run: docker build -t ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} ${{ env.APP_DIR }}
 
-    # 🔐 Trivy Scan - Docker Image
-    - name: Trivy Image Scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref:  ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-        format: 'table'
-        exit-code: '0'
-        ignore-unfixed: true
-
-    # 🔑 Login to Amazon ECR
+    # 🔐 Log in to ECR
     - name: Amazon ECR Login
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # 🏷️ Tag Docker Image
+    # 🏷️ Tag Docker Image (for ECR)
     - name: Tag Docker Image
       run: |
-        docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+        docker tag ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+        ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
-    # 📤 Push Docker Image
-    - name: Push to Amazon ECR
+    # ✅ Trivy Image Scan (AFTER tagging)
+    - name: Trivy Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        format: 'table'
+        exit-code: '0'
+        ignore-unfixed: true
+
+    # 📤 Push Docker Image to ECR
+    - name: Push to ECR
       run: |
-        docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
-    # 🌐 OWASP ZAP (Requires running endpoint)
-    - name: Run OWASP ZAP Baseline Scan
+    # 🌐 Optional: OWASP ZAP DAST Scan (requires live endpoint)
+    - name: OWASP ZAP Scan
       uses: zaproxy/action-baseline@v0.7.0
       with:
-        target: "http://your-deployed-app-url.com"
+        target: "http://myapp.123456.elb.amazonaws.com.nip.io"  # Replace with your Ingress URL
         fail_action: false
         cmd_options: "-a"
       continue-on-error: true
+
 
 
