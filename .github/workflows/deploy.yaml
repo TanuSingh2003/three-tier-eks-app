@@ -1,23 +1,23 @@
-name: Build & Deploy Flask App to ECR
+name: Full Secure CI/CD Pipeline - Flask App
 
 on:
   push:
-    branches: [ "main" ]  # Triggers on push to main branch
+    branches: [ "main" ]
 
 jobs:
-  deploy:
-    name: Build & Push Docker Image to ECR
+  secure-deploy:
     runs-on: ubuntu-latest
-
     env:
       AWS_REGION: ap-south-1
       ECR_REPOSITORY: flask-todo-app
       IMAGE_TAG: latest
+      APP_DIR: ./microservices/app
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 📜 AWS Auth
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
@@ -25,19 +25,68 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Log in to Amazon ECR
+    # 🔍 Gitleaks - Secrets Scan
+    - name: Gitleaks Secret Scan
+      uses: gitleaks/gitleaks-action@v2
+      continue-on-error: true
+
+    # 🧪 Bandit - Python SAST
+    - name: Python Code Scan - Bandit
+      run: |
+        pip install bandit
+        bandit -r $APP_DIR || true
+
+    # ☁️ Checkov - IaC Scan
+    - name: Checkov Scan - Terraform and K8s
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: .
+        framework: terraform,kubernetes
+        quiet: true
+        soft_fail: true
+
+    # 📄 KubeLinter - Kubernetes YAML Security Lint
+    - name: Run KubeLinter on K8s YAMLs
+      run: |
+        curl -sL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz | tar xz
+        sudo mv kube-linter /usr/local/bin/
+        kube-linter lint k8s/ || true
+
+    # 🐳 Docker Build
+    - name: Build Docker Image
+      run: docker build -t $ECR_REPOSITORY:$IMAGE_TAG $APP_DIR
+
+    # 🔐 Trivy Scan - Docker Image
+    - name: Trivy Image Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: $ECR_REPOSITORY:$IMAGE_TAG
+        format: 'table'
+        exit-code: '0'
+        ignore-unfixed: true
+
+    # 🔑 Login to Amazon ECR
+    - name: Amazon ECR Login
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Build Docker image
-      run: |
-        docker build -t $ECR_REPOSITORY:$IMAGE_TAG ./microservices/app
-
-    - name: Tag Docker image
+    # 🏷️ Tag Docker Image
+    - name: Tag Docker Image
       run: |
         docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
 
-    - name: Push Docker image to Amazon ECR
+    # 📤 Push Docker Image
+    - name: Push to Amazon ECR
       run: |
         docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+
+    # 🌐 OWASP ZAP (Requires running endpoint)
+    - name: Run OWASP ZAP Baseline Scan
+      uses: zaproxy/action-baseline@v0.7.0
+      with:
+        target: "http://your-deployed-app-url.com"
+        fail_action: false
+        cmd_options: "-a"
+      continue-on-error: true
+
 
